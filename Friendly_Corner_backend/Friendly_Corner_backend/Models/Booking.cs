@@ -15,5 +15,8 @@ namespace Friendly_Corner_backend.Models
 
     public  Room ?Room { get; set; }
     public  User? User { get; set; }
-}
+        public DateTime CreatedAt { get; internal set; }
+        public DateTime StartTime { get; internal set; }
+        public DateTime EndTime { get; internal set; }
+    }
 }

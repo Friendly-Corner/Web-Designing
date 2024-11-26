@@ -1,10 +1,8 @@
 using Friendly_Corner_backend.Models;
-<<<<<<< HEAD
 using System.Collections.Generic;
 using System.Linq; // Make sure this is included for .ToList()
-=======
 using Microsoft.AspNetCore.Mvc;
->>>>>>> upstream/feature-branch-name
+
 using Microsoft.EntityFrameworkCore;
 
 namespace Friendly_Corner_backend.Controllers

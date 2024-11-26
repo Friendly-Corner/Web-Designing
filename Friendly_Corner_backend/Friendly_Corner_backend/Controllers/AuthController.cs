@@ -1,4 +1,4 @@
-﻿using Friendly_Corner_backend.Models;
+﻿﻿using Friendly_Corner_backend.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -18,19 +18,20 @@ namespace Friendly_Corner_backend.Controllers
         public AuthController(AppDbContext context, IConfiguration configuration)
         {
             _context = context;
-            _keyBytes = Encoding.ASCII.GetBytes(configuration["JwtSettings:SigningKey"] ?? string.Empty);
+            _keyBytes = Encoding.ASCII.GetBytes(s: configuration["JwtSettings:SigningKey"]);
         }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] User user)
         {
-            if (string.IsNullOrWhiteSpace(user.Username) || string.IsNullOrWhiteSpace(user.Password))
-                return BadRequest("Username and password are required.");
-
             if (await _context.Users.AnyAsync(u => u.Username == user.Username))
-                return BadRequest("User already exists.");
+                return BadRequest("User already exists");
 
-            user.Password = BCrypt.Net.BCrypt.HashPassword(user.Password, workFactor: 12); // Higher work factor for security
+            // Hash the password before saving
+            user.Password = BCrypt.Net.BCrypt.HashPassword(user.Password);
+            user.RegistrationDate = DateTime.UtcNow;
+            user.UpdatedDate = DateTime.UtcNow;
+
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
             return Ok("User registered successfully");
@@ -38,39 +39,123 @@ namespace Friendly_Corner_backend.Controllers
 
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
+{
+    var user = await _context.Users.SingleOrDefaultAsync(u => u.Username == loginDto.Username);
+    if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.Password))
+        return Unauthorized("Invalid credentials");
+
+    var tokenHandler = new JwtSecurityTokenHandler();
+    var tokenDescriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity(new[] 
         {
-            if (string.IsNullOrWhiteSpace(loginDto.Username) || string.IsNullOrWhiteSpace(loginDto.Password))
-                return BadRequest("Username and password are required.");
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role)
+        }),
+        Expires = DateTime.UtcNow.AddHours(1),
+        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_keyBytes), SecurityAlgorithms.HmacSha256Signature)
+    };
 
-            var user = await _context.Users.SingleOrDefaultAsync(u => u.Username == loginDto.Username);
-            if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.Password))
-                return Unauthorized("Invalid credentials");
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+    return Ok(new { Token = tokenHandler.WriteToken(token) });
+}
+       
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var tokenDescriptor = new SecurityTokenDescriptor
+        [HttpGet("users")]
+        public async Task<IActionResult> GetUsers()
+        {
+            try
             {
-                Subject = new ClaimsIdentity(new[]
-                {
-                    new Claim(ClaimTypes.Name, user.Username),
-                    new Claim(ClaimTypes.Role, user.Role ?? "User")
-                }),
-                Expires = DateTime.UtcNow.AddHours(1),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(_keyBytes), SecurityAlgorithms.HmacSha256Signature)
-            };
+                var users = await _context.Users
+                    .Select(u => new
+                    {
+                        u.Id,
+                        Username = u.Username ?? string.Empty,
+                        u.Password,
+                        Email = u.Email ?? string.Empty,
+                        Name = u.Name ?? string.Empty,
+                        PictureUrl = u.PictureUrl ?? string.Empty,
+                        WebUrl = u.WebUrl ?? string.Empty,
+                        Description = u.Description ?? string.Empty
+                    })
+                    .ToListAsync();
+                return Ok(users);
+            }
+            catch (Exception ex)
+            {
+                // Log the exception details for troubleshooting
+                Console.WriteLine($"Error fetching users: {ex.Message}");
+                return StatusCode(500, "Internal server error");
+            }
+        }
 
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return Ok(new { Token = tokenHandler.WriteToken(token) });
+        [HttpPut("update/{id}")]
+        public async Task<IActionResult> UpdateUser(int id, [FromBody] User updatedUser)
+        {
+            try
+            {
+                var user = await _context.Users.SingleOrDefaultAsync(u => u.Id == id);
+                if (user == null)
+                {
+                    return NotFound("User not found");
+                }
+
+                // Update user details
+                user.Username = updatedUser.Username;
+                user.Email = updatedUser.Email;
+                user.Name = updatedUser.Name;
+                user.PictureUrl = updatedUser.PictureUrl;
+                user.WebUrl = updatedUser.WebUrl;
+                user.Description = updatedUser.Description;
+
+                // Update password if provided
+                if (!string.IsNullOrEmpty(updatedUser.Password))
+                {
+                    user.Password = BCrypt.Net.BCrypt.HashPassword(updatedUser.Password);
+                }
+
+                user.UpdatedDate = DateTime.UtcNow;
+
+                _context.Users.Update(user);
+                await _context.SaveChangesAsync();
+                return Ok("User updated successfully");
+            }
+            catch (Exception ex)
+            {
+                // Log the exception details for troubleshooting
+                Console.WriteLine($"Error updating user: {ex.Message}");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+
+        [HttpDelete("delete/{id}")]
+        public async Task<IActionResult> DeleteUser(int id)
+        {
+            try
+            {
+                var user = await _context.Users.SingleOrDefaultAsync(u => u.Id == id);
+                if (user == null)
+                {
+                    return NotFound("User not found");
+                }
+
+                _context.Users.Remove(user);
+                await _context.SaveChangesAsync();
+                return Ok("User deleted successfully");
+            }
+            catch (Exception ex)
+            {
+                // Log the exception details for troubleshooting
+                Console.WriteLine($"Error deleting user: {ex.Message}");
+                return StatusCode(500, "Internal server error");
+            }
         }
     }
 
     public class LoginDto
     {
-<<<<<<< HEAD
-        public string Username { get; set; } = string.Empty; // Non-nullable and defaults to empty string
-        public string Password { get; set; } = string.Empty;
-=======
         public required string Username { get; set; }
         public required string Password { get; set; }
->>>>>>> upstream/feature-branch-name
     }
 }
